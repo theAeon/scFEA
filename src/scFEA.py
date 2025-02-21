@@ -218,7 +218,7 @@ def main(args):
     loss_v4 = []
     net.train()
     timestr = time.strftime("%Y%m%d-%H%M%S")
-    lossName = "./output/lossValue_" + timestr + ".txt"
+    lossName = "./" + res_dir + "/lossValue_" + timestr + ".txt"
     file_loss = open(lossName, "a")
     for epoch in tqdm(range(EPOCH)):
         loss, loss1, loss2, loss3, loss4 = 0,0,0,0,0
@@ -263,7 +263,7 @@ def main(args):
     plt.plot(loss_v2)
     plt.plot(loss_v3)
     plt.plot(loss_v4)
-    plt.legend(['total', 'balance', 'negative', 'cellVar', 'moduleVar']);
+    plt.legend(['total', 'balance', 'negative', 'cellVar', 'moduleVar'])
     imgName = './' + res_dir + '/loss_' + timestr + ".png"
     plt.savefig(imgName)
     timeName =  './' + res_dir + '/time_' + timestr + ".txt"
@@ -320,7 +320,7 @@ def main(args):
         setB.columns = cName
     if balanceName == 'NULL':
         # user do not define file name of balance
-        balanceName = "./output/balance_" + timestr + ".csv"
+        balanceName = "./" + res_dir + "/balance_" + timestr + ".csv"
     setB.to_csv(balanceName)
     
 
