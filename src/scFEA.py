@@ -219,7 +219,7 @@ def main(args):
     loss_v3 = []
     loss_v4 = []
     net.train()
-    if os.path.exists(res_dir):
+    if not os.path.exists(res_dir):
         os.makedirs(res_dir)
     timestr = time.strftime("%Y%m%d-%H%M%S")
     lossName = res_dir + "/lossValue_" + timestr + ".txt"
