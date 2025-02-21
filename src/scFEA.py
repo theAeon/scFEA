@@ -9,6 +9,8 @@ import argparse
 import time
 import warnings
 
+import os
+
 # tools
 import torch
 from torch.autograd import Variable
@@ -217,8 +219,10 @@ def main(args):
     loss_v3 = []
     loss_v4 = []
     net.train()
+    if os.path.exists(res_dir):
+        os.makedirs(res_dir)
     timestr = time.strftime("%Y%m%d-%H%M%S")
-    lossName = "./" + res_dir + "/lossValue_" + timestr + ".txt"
+    lossName = res_dir + "/lossValue_" + timestr + ".txt"
     file_loss = open(lossName, "a")
     for epoch in tqdm(range(EPOCH)):
         loss, loss1, loss2, loss3, loss4 = 0,0,0,0,0
@@ -264,9 +268,9 @@ def main(args):
     plt.plot(loss_v3)
     plt.plot(loss_v4)
     plt.legend(['total', 'balance', 'negative', 'cellVar', 'moduleVar'])
-    imgName = './' + res_dir + '/loss_' + timestr + ".png"
+    imgName = res_dir + '/loss_' + timestr + ".png"
     plt.savefig(imgName)
-    timeName =  './' + res_dir + '/time_' + timestr + ".txt"
+    timeName =  res_dir + '/time_' + timestr + ".txt"
     f = open(timeName, "a")
     runTimeStr = str(end - start)
     f.write(runTimeStr)
@@ -304,7 +308,7 @@ def main(args):
     # save to file
     if fileName == 'NULL':
         # user do not define file name of flux
-        fileName = "./" + res_dir + "/" + test_file[-len(test_file):-4] + "_module" + str(n_modules) + "_cell" + str(n_cells) + "_batch" + str(BATCH_SIZE) + \
+        fileName = res_dir + "/" + test_file[-len(test_file):-4] + "_module" + str(n_modules) + "_cell" + str(n_cells) + "_batch" + str(BATCH_SIZE) + \
                     "_LR" + str(LEARN_RATE) + "_epoch" + str(EPOCH) + "_SCimpute_" + str(sc_imputation)[0] + \
                     "_lambBal" + str(LAMB_BA) + "_lambSca" + str(LAMB_NG) + "_lambCellCor" + str(LAMB_CELL) + "_lambModCor_1e-2" + \
                     '_' + timestr + ".csv"
@@ -320,7 +324,7 @@ def main(args):
         setB.columns = cName
     if balanceName == 'NULL':
         # user do not define file name of balance
-        balanceName = "./" + res_dir + "/balance_" + timestr + ".csv"
+        balanceName = res_dir + "/balance_" + timestr + ".csv"
     setB.to_csv(balanceName)
     
 
