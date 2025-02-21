@@ -169,7 +169,7 @@ def main(args):
         temp.loc[:, [g for g in gene_names if g not in genes]] = 0
         temp = temp.T
         temp['Module_Gene'] = ['%02d_%s' % (i,g) for g in gene_names]
-        geneExprDf = geneExprDf.append(temp, ignore_index = True, sort=False)
+        geneExprDf=pd.concat([geneExprDf, temp], ignore_index=True, sort=False)
     geneExprDf.index = geneExprDf['Module_Gene']
     geneExprDf.drop('Module_Gene', axis = 'columns', inplace = True)
     X = geneExprDf.values.T
