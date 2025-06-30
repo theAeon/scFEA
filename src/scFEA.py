@@ -22,8 +22,8 @@ import magic
 from tqdm import tqdm
 
 # scFEA lib
-from ClassFlux import FLUX # Flux class network
-from util import pearsonr
+from ClassFlux import FLUX  # Flux class network
+from util import pearsonr, construct_path
 from DatasetFlux import MyDataset
 
 
@@ -75,21 +75,25 @@ def myLoss(m, c, lamb1 = 0.2, lamb2= 0.2, lamb3 = 0.2, lamb4 = 0.2, geneScale = 
     return loss, loss1, loss2, loss3, loss4
     
 
-def main(args):
+def main(args: argparse.Namespace):
 
     # set arguments
-    data_path = args.data_dir
-    input_path = args.input_dir
-    res_dir = args.res_dir
-    test_file = args.test_file
-    moduleGene_file = args.moduleGene_file
-    cm_file = args.stoichiometry_matrix
+    data_path = construct_path(args.data_dir)
+    input_path = construct_path(args.input_dir)
+    res_dir = construct_path(args.res_dir)
+    test_file = input_path / args.test_file
+    moduleGene_file = data_path / args.moduleGene_file
+    cm_file = data_path / args.stoichiometry_matrix
     sc_imputation = args.sc_imputation
     cName_file = args.cName_file
     fileName = args.output_flux_file
     balanceName = args.output_balance_file
     EPOCH = args.train_epoch
-    
+
+    # Sanity checks
+    for f in [test_file, moduleGene_file, cm_file]:
+        if not f.is_file():
+            raise FileNotFoundError(f"{f} is not found")
     if EPOCH <= 0:
         raise NameError('EPOCH must greater than 1!')
 
@@ -98,9 +102,7 @@ def main(args):
     
     # read data
     print("Starting load data...")
-    geneExpr = pd.read_csv(
-                input_path + '/' + test_file,
-                index_col=0)
+    geneExpr = pd.read_csv(test_file, index_col=0)
     geneExpr = geneExpr.T
     geneExpr = geneExpr * 1.0
     if sc_imputation == True:
@@ -117,7 +119,7 @@ def main(args):
     
     BATCH_SIZE = geneExpr.shape[0]
 
-    moduleGene = pd.read_csv(data_path + "/" + moduleGene_file, sep=",", index_col=0)
+    moduleGene = pd.read_csv(moduleGene_file, sep=",", index_col=0)
     moduleLen = moduleGene.notnull().sum(axis=1).to_numpy()
 
     # find existing gene
@@ -129,19 +131,13 @@ def main(args):
     gene_overlap = list(data_gene_all.intersection(module_gene_all))   # fix
     gene_overlap.sort()
 
-    cmMat = pd.read_csv(
-            data_path + '/' + cm_file,
-            sep=',',
-            header=None)
+    cmMat = pd.read_csv(cm_file, sep=",", header=None)
     cmMat = cmMat.values
     cmMat = torch.FloatTensor(cmMat).to(device)
     
     if cName_file != 'noCompoundName':
         print("Load compound name file, the balance output will have compound name.")
-        cName = pd.read_csv(
-                data_path + '/' + cName_file,
-                sep=',',
-                header=0)
+        cName = pd.read_csv(data_path / cName_file, sep=",", header=0)
         cName = cName.columns
     print("Load data done.")
     
@@ -212,7 +208,7 @@ def main(args):
     if not os.path.exists(res_dir):
         os.makedirs(res_dir)
     timestr = time.strftime("%Y%m%d-%H%M%S")
-    lossName = res_dir + "/lossValue_" + timestr + ".txt"
+    lossName = res_dir / f"lossValue_{timestr}.txt"
     file_loss = open(lossName, "a")
     for epoch in tqdm(range(EPOCH)):
         loss, loss1, loss2, loss3, loss4 = 0,0,0,0,0
@@ -257,14 +253,12 @@ def main(args):
     plt.plot(loss_v2)
     plt.plot(loss_v3)
     plt.plot(loss_v4)
-    plt.legend(['total', 'balance', 'negative', 'cellVar', 'moduleVar'])
-    imgName = res_dir + '/loss_' + timestr + ".png"
+    plt.legend(["total", "balance", "negative", "cellVar", "moduleVar"])
+    imgName = res_dir / f"loss_{timestr}.png"
     plt.savefig(imgName)
-    timeName =  res_dir + '/time_' + timestr + ".txt"
-    f = open(timeName, "a")
-    runTimeStr = str(end - start)
-    f.write(runTimeStr)
-    f.close()   
+    with open(res_dir / f"time_{timestr}.txt", "a") as f:
+        runTimeStr = str(end - start)
+        f.write(runTimeStr)
 
     
 #    Dataloader
@@ -280,25 +274,27 @@ def main(args):
     fluxStatuTest = np.zeros((n_cells, n_modules), dtype="f")  # float32
     balanceStatus = np.zeros((n_cells, n_comps), dtype="f")
     net.eval()
-    for epoch in range(1):
-        loss, loss1, loss2 = 0,0,0
-        
-        for i, (X, X_scale, _) in enumerate(test_loader):
 
-            X_batch = Variable(X.float().to(device))
-            out_m_batch, out_c_batch = net(X_batch, n_modules, n_genes, n_comps, cmMat)
-            
-            # save data
-            fluxStatuTest[i, :] = out_m_batch.detach().cpu().numpy()
-            balanceStatus[i, :] = out_c_batch.detach().cpu().numpy()
+    loss, loss1, loss2 = 0, 0, 0
+    for i, (X, X_scale, _) in enumerate(test_loader):
+
+        X_batch = Variable(X.float().to(device))
+        out_m_batch, out_c_batch = net(X_batch, n_modules, n_genes, n_comps, cmMat)
+
+        # save data
+        fluxStatuTest[i, :] = out_m_batch.detach().cpu().numpy()
+        balanceStatus[i, :] = out_c_batch.detach().cpu().numpy()
 
     # save to file
-    if fileName == 'NULL':
+    if not fileName:
         # user do not define file name of flux
-        fileName = res_dir + "/" + test_file[-len(test_file):-4] + "_module" + str(n_modules) + "_cell" + str(n_cells) + "_batch" + str(BATCH_SIZE) + \
-                    "_LR" + str(LEARN_RATE) + "_epoch" + str(EPOCH) + "_SCimpute_" + str(sc_imputation)[0] + \
-                    "_lambBal" + str(LAMB_BA) + "_lambSca" + str(LAMB_NG) + "_lambCellCor" + str(LAMB_CELL) + "_lambModCor_1e-2" + \
-                    '_' + timestr + ".csv"
+        fileName = res_dir / (
+            f"{test_file.stem}_module{n_modules}_cell{n_cells}"
+            + f"_batch{BATCH_SIZE}_LR{LEARN_RATE}_epoch{EPOCH}"
+            + f"_SCimpute_{str(sc_imputation)[0]}"
+            + f"_lambBal{LAMB_BA}_lambSca{LAMB_NG}_lambCellCor{LAMB_CELL}"
+            + f"_lambModCor_{LAMB_MOD:.0e}_{timestr}.csv"
+        )
     setF = pd.DataFrame(fluxStatuTest)
     setF.columns = moduleGene.index
     setF.index = geneExpr.index.tolist()
@@ -309,9 +305,9 @@ def main(args):
     setB.index = setF.index
     if cName_file != 'noCompoundName':
         setB.columns = cName
-    if balanceName == 'NULL':
+    if not balanceName:
         # user do not define file name of balance
-        balanceName = res_dir + "/balance_" + timestr + ".csv"
+        balanceName = res_dir / f"balance_{timestr}.csv"
     setB.to_csv(balanceName)
     
 
@@ -321,33 +317,79 @@ def main(args):
     return
 
 
-def parse_arguments(parser):
+def parse_arguments(parser: argparse.ArgumentParser):
 
-
-    parser.add_argument('--data_dir', type=str, default='data', metavar='<data_directory>',
-                        help='The data directory for scFEA model files.')
-    parser.add_argument('--input_dir', type=str, default='input', metavar='<input_directory>',
-                        help='The data directory for single cell input data.')
-    parser.add_argument('--res_dir', type=str, default='output', metavar='<data_directory>',
-                        help='The data directory for result [output]. The output of scFEA includes two matrices, predicted metabolic flux and metabolites stress at single cell resolution.')
-    parser.add_argument('--test_file', type=str, default='Melissa_full.csv', 
-                        help='The test SC file [input]. The input of scFEA is a single cell profile matrix, where row is gene and column is cell. Example datasets are provided in /data/ folder. The input can be raw counts or normalised counts. The logarithm would be performed if value larger than 30.')
-    parser.add_argument('--moduleGene_file', type=str, default='module_gene_m168.csv', 
-                        help='The table contains genes for each module. We provide human and mouse two models in scFEA. For human model, please use module_gene_m168.csv which is default.  All candidate moduleGene files are provided in /data/ folder.')
-    parser.add_argument('--stoichiometry_matrix', type=str, default='cmMat_c70_m168.csv', 
-                        help='The table describes relationship between compounds and modules. Each row is an intermediate metabolite and each column is metabolic module. For human model, please use cmMat_171.csv which is default. All candidate stoichiometry matrices are provided in /data/ folder.')
-    parser.add_argument('--cName_file', type=str, default='cName_c70_m168.csv',
-                        help='The name of compounds. The table contains two rows. First row is compounds name and second row is corresponding id.')
-    parser.add_argument('--sc_imputation', type=eval, default='False', choices=[True, False],
-                        help='Whether perform imputation for SC dataset (recommend set to <True> for 10x data).')
-    parser.add_argument('--output_flux_file', type=str, default='NULL', 
-                        help='User defined predicted flux file name.')
-    parser.add_argument('--output_balance_file', type=str, default='NULL', 
-                        help='User defined predicted balance file name.')
-    parser.add_argument('--train_epoch', type=int, default=100, nargs='?',
-                        help='User defined EPOCH (training iteration).')
-    
-    
+    parser.add_argument(
+        "--data_dir",
+        type=str,
+        default="data",
+        metavar="<data_directory>",
+        help="The data directory for scFEA model files.",
+    )
+    parser.add_argument(
+        "--input_dir",
+        type=str,
+        default="data",
+        metavar="<input_directory>",
+        help="The data directory for single cell input data.",
+    )
+    parser.add_argument(
+        "--res_dir",
+        type=str,
+        default="output",
+        metavar="<data_directory>",
+        help="The data directory for result [output]. The output of scFEA includes two matrices, predicted metabolic flux and metabolites stress at single cell resolution.",
+    )
+    parser.add_argument(
+        "--test_file",
+        type=str,
+        default="Melissa_full.csv",
+        help="The test SC file [input]. The input of scFEA is a single cell profile matrix, where row is gene and column is cell. Example datasets are provided in /data/ folder. The input can be raw counts or normalised counts. The logarithm would be performed if value larger than 30.",
+    )
+    parser.add_argument(
+        "--moduleGene_file",
+        type=str,
+        default="module_gene_m168.csv",
+        help="The table contains genes for each module. We provide human and mouse two models in scFEA. For human model, please use module_gene_m168.csv which is default.  All candidate moduleGene files are provided in /data/ folder.",
+    )
+    parser.add_argument(
+        "--stoichiometry_matrix",
+        type=str,
+        default="cmMat_c70_m168.csv",
+        help="The table describes relationship between compounds and modules. Each row is an intermediate metabolite and each column is metabolic module. For human model, please use cmMat_171.csv which is default. All candidate stoichiometry matrices are provided in /data/ folder.",
+    )
+    parser.add_argument(
+        "--cName_file",
+        type=str,
+        default="cName_c70_m168.csv",
+        help="The name of compounds. The table contains two rows. First row is compounds name and second row is corresponding id.",
+    )
+    parser.add_argument(
+        "--sc_imputation",
+        type=bool,
+        default="False",
+        choices=[True, False],
+        help="Whether perform imputation for SC dataset (recommend set to <True> for 10x data).",
+    )
+    parser.add_argument(
+        "--output_flux_file",
+        type=str,
+        default=None,
+        help="User defined predicted flux file name.",
+    )
+    parser.add_argument(
+        "--output_balance_file",
+        type=str,
+        default=None,
+        help="User defined predicted balance file name.",
+    )
+    parser.add_argument(
+        "--train_epoch",
+        type=int,
+        default=100,
+        nargs="?",
+        help="User defined EPOCH (training iteration).",
+    )
 
     args = parser.parse_args()
 
